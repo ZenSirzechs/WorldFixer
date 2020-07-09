@@ -12,77 +12,80 @@ import com.creeperface.nukkitx.worldfixer.util.BlockEntitySpawner;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
  * @author CreeperFace
  */
-public class LevelConverter {
+public class LevelConverter extends Thread {
 
     public static void convert(WorldFixer plugin, Level level, boolean fast) {
-        LevelProvider provider = level.getProvider();
 
-        Pattern pattern = Pattern.compile("-?\\d+");
-        File[] regions = new File(level.getServer().getDataPath() + "worlds/" + level.getFolderName() + "/region").listFiles(
-                (f) -> f.isFile() && f.getName().endsWith(".mca")
-        );
+        CompletableFuture.runAsync(() -> {
+            LevelProvider provider = level.getProvider();
 
-        if (regions != null && regions.length > 0) {
-            double processed = 0;
-            int blocks = 0;
-            int blockEntities = 0;
-            long time = System.currentTimeMillis();
-            plugin.getLogger().info("Starting fixing world '" + level.getName() + "'");
+            Pattern pattern = Pattern.compile("-?\\d+");
+            File[] regions = new File(level.getServer().getDataPath() + "worlds/" + level.getFolderName() + "/region").listFiles(
+                    (f) -> f.isFile() && f.getName().endsWith(".mca")
+            );
 
-            List<Vector3> chests = new ArrayList<>();
+            if (regions != null && regions.length > 0) {
+                double processed = 0;
+                int blocks = 0;
+                int blockEntities = 0;
+                long time = System.currentTimeMillis();
+                plugin.getLogger().info("Starting fixing world '" + level.getName() + "'");
 
-            for (File region : regions) {
-                Matcher m = pattern.matcher(region.getName());
-                int regionX, regionZ;
-                try {
-                    if (m.find()) {
-                        regionX = Integer.parseInt(m.group());
-                    } else continue;
-                    if (m.find()) {
-                        regionZ = Integer.parseInt(m.group());
-                    } else continue;
-                } catch (NumberFormatException e) {
-                    continue;
-                }
+                List<Vector3> chests = new ArrayList<>();
 
-                long start = System.currentTimeMillis();
+                for (File region : regions) {
+                    Matcher m = pattern.matcher(region.getName());
+                    int regionX, regionZ;
+                    try {
+                        if (m.find()) {
+                            regionX = Integer.parseInt(m.group());
+                        } else continue;
+                        if (m.find()) {
+                            regionZ = Integer.parseInt(m.group());
+                        } else continue;
+                    } catch (NumberFormatException e) {
+                        continue;
+                    }
 
-                try {
-                    RegionLoader loader = new RegionLoader(provider, regionX, regionZ);
+                    long start = System.currentTimeMillis();
 
-                    for (int chunkX = 0; chunkX < 32; chunkX++) {
-                        for (int chunkZ = 0; chunkZ < 32; chunkZ++) {
-                            BaseFullChunk chunk = loader.readChunk(chunkX, chunkZ);
+                    try {
+                        RegionLoader loader = new RegionLoader(provider, regionX, regionZ);
 
-                            if (chunk == null) continue;
-                            chunk.initChunk();
+                        for (int chunkX = 0; chunkX < 32; chunkX++) {
+                            for (int chunkZ = 0; chunkZ < 32; chunkZ++) {
+                                BaseFullChunk chunk = loader.readChunk(chunkX, chunkZ);
 
-                            boolean chunkChanged = false;
+                                if (chunk == null) continue;
+                                chunk.initChunk();
 
-                            for (int x = 0; x < 16; x++) {
-                                for (int y = 0; y < 256; y++) {
-                                    for (int z = 0; z < 16; z++) {
-                                        int id = chunk.getBlockId(x, y, z);
-                                        boolean changed = WorldFixer.fixId(chunk, (chunk.getX() << 4) | (x & 0xf), y, (chunk.getZ() << 4) | (z & 0xf), id);
+                                boolean chunkChanged = false;
 
-                                        if (changed) {
-                                            chunkChanged = true;
-                                            blocks++;
-                                        }
+                                for (int x = 0; x < 16; x++) {
+                                    for (int y = 0; y < 256; y++) {
+                                        for (int z = 0; z < 16; z++) {
+                                            int id = chunk.getBlockId(x, y, z);
+                                            boolean changed = WorldFixer.fixId(chunk, (chunk.getX()<<4) | (x & 0xf), y, (chunk.getZ()<<4) | (z & 0xf), id);
 
-                                        if (BlockEntitySpawner.checkBlockEntity(id, chunk, new Vector3(x, y, z))) {
-                                            chunkChanged = true;
-                                            blockEntities++;
+                                            if (changed) {
+                                                chunkChanged = true;
+                                                blocks++;
+                                            }
+
+                                            if (BlockEntitySpawner.checkBlockEntity(id, chunk, new Vector3(x, y, z))) {
+                                                chunkChanged = true;
+                                                blockEntities++;
+                                            }
                                         }
                                     }
                                 }
-                            }
 
                         /*for (BlockEntity blockEntity : chunk.getBlockEntities().values()) {
                             if (blockEntity instanceof BlockEntitySign) {
@@ -98,31 +101,31 @@ public class LevelConverter {
                             }
                         }*/
 
-                            if (chunkChanged) {
-                                loader.writeChunk(chunk);
+                                if (chunkChanged) {
+                                    loader.writeChunk(chunk);
+                                }
                             }
                         }
+
+                        processed++;
+                        loader.close();
+                    } catch (Exception e) {
+                        MainLogger.getLogger().logException(e);
                     }
 
-                    processed++;
-                    loader.close();
-                } catch (Exception e) {
-                    MainLogger.getLogger().logException(e);
-                }
+                    plugin.getLogger().info("Fixing... " + NukkitMath.round((processed / regions.length) * 100, 2) + "% done");
 
-                plugin.getLogger().info("Fixing... " + NukkitMath.round((processed / regions.length) * 100, 2) + "% done");
+                    if (!fast) {
+                        long sleep = NukkitMath.floorDouble((System.currentTimeMillis() - start) * 0.25);
 
-                if (!fast) {
-                    long sleep = NukkitMath.floorDouble((System.currentTimeMillis() - start) * 0.25);
-
-                    try {
-                        Thread.sleep(sleep);
-                    } catch (InterruptedException e) {
-                        plugin.getLogger().info("Main thread was interrupted and world fixing process could not be completed.");
-                        return;
+                        try {
+                            Thread.sleep(sleep);
+                        } catch (InterruptedException e) {
+                            plugin.getLogger().info("Main thread was interrupted and world fixing process could not be completed.");
+                            return;
+                        }
                     }
                 }
-            }
 
             /*for(Vector3 pos : chests) {
                 if(level.getBlockEntity(pos) != null)
@@ -156,8 +159,9 @@ public class LevelConverter {
                 }
             }*/
 
-            plugin.getLogger().info("World " + level.getName() + " successfully fixed in " + (System.currentTimeMillis() - time) / 1000 + "s. (Fixed " + blocks + " blocks and " + blockEntities
-                    + " blockentities)");
-        }
+                plugin.getLogger().info("World " + level.getName() + " successfully fixed in " + (System.currentTimeMillis() - time) / 1000 + "s. (Fixed " + blocks + " blocks and " + blockEntities
+                        + " blockentities)");
+            }
+        });
     }
 }

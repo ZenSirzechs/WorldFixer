@@ -22,7 +22,7 @@ public class WorldFixer extends PluginBase implements Listener {
 
     public HashMap<String, Selection> selectors = new HashMap<>();
 
-    private HashSet<String> levels = new HashSet<>();
+    private final HashSet<String> levels = new HashSet<>();
 
     @Override
     public void onEnable() {
@@ -31,10 +31,6 @@ public class WorldFixer extends PluginBase implements Listener {
 
     @Override
     public boolean onCommand(CommandSender sender, Command cmd, String label, String[] args) {
-
-        if (!(sender instanceof Player)) {
-            return true;
-        }
 
         if (cmd.getName().toLowerCase().equals("wf")) {
             if (args.length == 0) {
@@ -53,6 +49,31 @@ public class WorldFixer extends PluginBase implements Listener {
                     sender.sendMessage(TextFormat.RED + "Level " + TextFormat.YELLOW + args[1] + TextFormat.RED + " doesn't exist");
                     return true;
                 }
+            }
+
+            if (args[0].toLowerCase().equals("fixlevel")) {
+                if (!sender.hasPermission("wf.command.fix") && !sender.isOp()) {
+                    sender.sendMessage(cmd.getPermissionMessage());
+                    return false;
+                }
+
+                if (args.length < 2) {
+                    sender.sendMessage(TextFormat.YELLOW + "Use /wf fixlevel <level name> [fast]");
+                    return false;
+                }
+
+                boolean fast = false;
+                if (args.length > 2) {
+                    fast = Boolean.parseBoolean(args[2]);
+                }
+
+                fixWorld(level, fast);
+                return true;
+            }
+
+            if (!(sender instanceof Player)) {
+                sender.sendMessage("You can use this command only as a player");
+                return false;
             }
 
             switch (args[0].toLowerCase()) {
@@ -80,24 +101,6 @@ public class WorldFixer extends PluginBase implements Listener {
 
                     selectors.remove(sender.getName().toLowerCase());
                     sender.sendMessage(TextFormat.GREEN + "Selected area has been successfully fixed!");
-                    break;
-                case "fixlevel":
-                    if (!sender.hasPermission("wf.command.fix") && !sender.isOp()) {
-                        sender.sendMessage(cmd.getPermissionMessage());
-                        return false;
-                    }
-
-                    if (args.length < 2) {
-                        sender.sendMessage(TextFormat.YELLOW + "Use /wf fixlevel <level name> [fast]");
-                        return false;
-                    }
-
-                    boolean fast = false;
-                    if (args.length > 2) {
-                        fast = Boolean.parseBoolean(args[2]);
-                    }
-
-                    fixWorld(level, fast);
                     break;
                 /*case "removetiles":
                     if(!sender.hasPermission("wf.command.fixtiles") && !sender.isOp()){
